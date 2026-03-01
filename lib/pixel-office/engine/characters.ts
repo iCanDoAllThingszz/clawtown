@@ -179,6 +179,43 @@ export function updateCharacter(
       // Countdown wander timer
       ch.wanderTimer -= dt
       if (ch.wanderTimer <= 0) {
+        // 漫游模式：持续在指定区域内随机移动，偶尔坐下
+        if (ch.isRoaming) {
+          // 30%概率坐到座位上休息
+          if (Math.random() < 0.3 && ch.seatId) {
+            const seat = seats.get(ch.seatId)
+            if (seat) {
+              const path = findPath(ch.tileCol, ch.tileRow, seatGridCol(seat), seatGridRow(seat), tileMap, blockedTiles)
+              if (path.length > 0) {
+                ch.path = path
+                ch.moveProgress = 0
+                ch.state = CharacterState.WALK
+                ch.frame = 0
+                ch.frameTimer = 0
+                ch.wanderTimer = randomRange(3, 8) // 坐一会儿
+                break
+              }
+            }
+          }
+          // 70%概率继续随机走动（限制在聊天室区域：rows 0-9, cols 10-20）
+          const roamingTiles = walkableTiles.filter(t => 
+            t.row >= 0 && t.row <= 9 && t.col >= 10 && t.col <= 20
+          )
+          if (roamingTiles.length > 0) {
+            const target = roamingTiles[Math.floor(Math.random() * roamingTiles.length)]
+            const path = findPath(ch.tileCol, ch.tileRow, target.col, target.row, tileMap, blockedTiles)
+            if (path.length > 0) {
+              ch.path = path
+              ch.moveProgress = 0
+              ch.state = CharacterState.WALK
+              ch.frame = 0
+              ch.frameTimer = 0
+            }
+          }
+          ch.wanderTimer = randomRange(2, 5) // 短暂停留后继续
+          break
+        }
+        
         // Check if we've wandered enough — return to seat for a rest
         if (ch.wanderCount >= ch.wanderLimit && ch.seatId) {
           const seat = seats.get(ch.seatId)

@@ -709,6 +709,18 @@ export class OfficeState {
     if (targetSeatId && targetSeat) {
       // 漫游模式下，不自动坐到座位上，只是移动到房间区域
       if (ch.isRoaming) {
+        // 找到聊天室的座位（如果有的话）
+        for (const [seatId, seat] of this.seats) {
+          const row = Math.round(seat.seatRow)
+          const col = Math.round(seat.seatCol)
+          const rowMatch = row >= targetRowMin && row <= targetRowMax
+          const colMatch = targetColMin === undefined || (col >= targetColMin && col <= targetColMax!)
+          if (rowMatch && colMatch && !seat.assigned) {
+            ch.seatId = seatId
+            break
+          }
+        }
+        
         // 随机选择房间内的一个可走位置
         const walkableTiles = []
         for (let r = targetRowMin; r <= targetRowMax; r++) {
@@ -725,6 +737,7 @@ export class OfficeState {
             ch.path = path
             ch.moveProgress = 0
             ch.state = CharacterState.WALK
+            ch.wanderTimer = 2 + Math.random() * 3 // 初始化漫游计时器
           }
         }
         return

@@ -356,8 +356,10 @@ function SessionList({ agentId }: { agentId: string }) {
       .then((data) => {
         if (data.error) setError(data.error);
         else {
-          // Filter out cron :run: keys to avoid duplicate cards
-          const filtered = (data.sessions || []).filter((s: Session) => !s.key.includes(":run:"));
+          // Only filter cron :run: sessions to avoid duplicate cards, not subagent sessions
+          const filtered = (data.sessions || []).filter((s: Session) =>
+            !(s.type === "cron" && s.key.includes(":run:"))
+          );
           setSessions(filtered);
         }
       })

@@ -707,6 +707,29 @@ export class OfficeState {
     }
 
     if (targetSeatId && targetSeat) {
+      // 漫游模式下，不自动坐到座位上，只是移动到房间区域
+      if (ch.isRoaming) {
+        // 随机选择房间内的一个可走位置
+        const walkableTiles = []
+        for (let r = targetRowMin; r <= targetRowMax; r++) {
+          for (let c = (targetColMin || 0); c <= (targetColMax || 20); c++) {
+            if (isWalkable(c, r, this.tileMap, this.blockedTiles)) {
+              walkableTiles.push({ col: c, row: r })
+            }
+          }
+        }
+        if (walkableTiles.length > 0) {
+          const randomTile = walkableTiles[Math.floor(Math.random() * walkableTiles.length)]
+          const path = findPath(ch.tileCol, ch.tileRow, randomTile.col, randomTile.row, this.tileMap, this.blockedTiles)
+          if (path.length > 0) {
+            ch.path = path
+            ch.moveProgress = 0
+            ch.state = CharacterState.WALK
+          }
+        }
+        return
+      }
+      
       // Release old seat if it was assigned
       if (ch.seatId) {
         const oldSeat = this.seats.get(ch.seatId)
@@ -981,6 +1004,18 @@ export class OfficeState {
     const ch = this.characters.get(id)
     if (ch) {
       ch.currentTool = tool
+    }
+  }
+
+  setAgentRoaming(id: number, roaming: boolean): void {
+    const ch = this.characters.get(id)
+    if (ch) {
+      ch.isRoaming = roaming
+      // 漫游模式下，不自动坐到座位上
+      if (roaming && ch.seatId) {
+        ch.seatId = null
+        ch.state = CharacterState.IDLE
+      }
     }
   }
 

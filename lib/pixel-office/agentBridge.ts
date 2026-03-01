@@ -89,6 +89,13 @@ export function syncAgentsToOffice(
       if (prevRoom !== targetRoom) {
         office.moveAgentToRoom(charId, targetRoom)
         prevAgentRooms.set(activity.id, targetRoom)
+        
+        // 主agent在聊天室时启用漫游模式（随机走动，偶尔坐下）
+        if (activity.id === 'main' && targetRoom === 'chat') {
+          office.setAgentRoaming(charId, true)
+        } else {
+          office.setAgentRoaming(charId, false)
+        }
       }
 
       // Update agent state

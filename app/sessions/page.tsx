@@ -305,6 +305,7 @@ function SessionList({ agentId }: { agentId: string }) {
 
   const fetchSessions = useCallback(() => {
     setLoading(true);
+    setError(null);
     fetchWithRetry(`/api/sessions/${agentId}`)
       .then((r) => r.json())
       .then((data) => {
@@ -318,7 +319,14 @@ function SessionList({ agentId }: { agentId: string }) {
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><p className="text-[var(--text-muted)]">{t("common.loading")}</p></div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center"><p className="text-red-400">{t("common.loadError")}: {error}</p></div>;
+  if (error) return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+      <p className="text-red-400">{t("common.loadError")}: {error}</p>
+      <button onClick={fetchSessions} className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm hover:opacity-90 transition">
+        {t("common.retry") || "重试"}
+      </button>
+    </div>
+  );
 
   // Get unique types for filter
   const types = Array.from(new Set(sessions.map((s) => s.type)));

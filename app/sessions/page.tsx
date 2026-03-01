@@ -5,6 +5,32 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
 
+/* ── fetch with retry and timeout ── */
+async function fetchWithRetry(
+  url: string,
+  options?: RequestInit,
+  retries = 3,
+  timeout = 10000
+): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response;
+    } catch (e) {
+      if (i === retries - 1) throw e;
+      await new Promise((r) => setTimeout(r, 1000 * (i + 1))); // 指数退避
+    }
+  }
+  throw new Error("Unexpected error in fetchWithRetry");
+}
+
 interface AgentInfo {
   id: string;
   name: string;
@@ -92,8 +118,9 @@ function AgentPicker() {
   const { t } = useI18n();
   const formatTimeAgo = useTimeAgo();
 
-  useEffect(() => {
-    fetch("/api/config")
+  const fetchAgents = useCallback(() => {
+    setLoading(true);
+    fetchWithRetry("/api/config")
       .then((r) => r.json())
       .then((data) => {
         if (data.error) setError(data.error);
@@ -103,8 +130,19 @@ function AgentPicker() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    fetchAgents();
+  }, [fetchAgents]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center"><p className="text-[var(--text-muted)]">{t("common.loading")}</p></div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center"><p className="text-red-400">{t("common.loadError")}: {error}</p></div>;
+  if (error) return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+      <p className="text-red-400">{t("common.loadError")}: {error}</p>
+      <button onClick={fetchAgents} className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm hover:opacity-90 transition">
+        {t("common.retry") || "重试"}
+      </button>
+    </div>
+  );
 
   return (
     <main className="min-h-screen p-8 max-w-6xl mx-auto">
@@ -147,9 +185,9 @@ function SessionDetailPanel({ agentId, sessionId, onClose }: { agentId: string; 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchDetail = useCallback(() => {
     setLoading(true);
-    fetch(`/api/sessions/${agentId}/${sessionId}`)
+    fetchWithRetry(`/api/sessions/${agentId}/${sessionId}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.error) setError(data.error);
@@ -159,8 +197,19 @@ function SessionDetailPanel({ agentId, sessionId, onClose }: { agentId: string; 
       .finally(() => setLoading(false));
   }, [agentId, sessionId]);
 
+  useEffect(() => {
+    fetchDetail();
+  }, [fetchDetail]);
+
   if (loading) return <div className="p-6 text-center text-[var(--text-muted)]">加载会话详情...</div>;
-  if (error) return <div className="p-6 text-center text-red-400">加载失败: {error}</div>;
+  if (error) return (
+    <div className="p-6 text-center">
+      <p className="text-red-400 mb-3">加载失败: {error}</p>
+      <button onClick={fetchDetail} className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-xs hover:opacity-90 transition">
+        重试
+      </button>
+    </div>
+  );
   if (!detail) return null;
 
   return (
@@ -256,7 +305,7 @@ function SessionList({ agentId }: { agentId: string }) {
 
   const fetchSessions = useCallback(() => {
     setLoading(true);
-    fetch(`/api/sessions/${agentId}`)
+    fetchWithRetry(`/api/sessions/${agentId}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.error) setError(data.error);
@@ -363,7 +412,7 @@ function SessionList({ agentId }: { agentId: string }) {
                               e.stopPropagation();
                               if (compacting) return;
                               setCompacting(s.sessionId);
-                              fetch(`/api/sessions/${agentId}/${s.sessionId}/compact`, { method: "POST" })
+                              fetchWithRetry(`/api/sessions/${agentId}/${s.sessionId}/compact`, { method: "POST" })
                                 .then((r) => r.json())
                                 .then((d) => {
                                   if (d.ok) {

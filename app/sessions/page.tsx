@@ -388,7 +388,10 @@ function SessionList({ agentId }: { agentId: string }) {
     <main className="min-h-screen p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">📋 {agentId} {t("sessions.title")}</h1>
+          <h1 className="text-2xl font-bold">📋 {agentName} {t("sessions.title")}</h1>
+          {agentName !== agentId && (
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">Agent ID: {agentId}</p>
+          )}
           <p className="text-[var(--text-muted)] text-sm mt-1">
             {filtered.length} {t("sessions.sessionCount")} · {t("sessions.totalToken")}: {(totalTokens / 1000).toFixed(1)}k
           </p>

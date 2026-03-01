@@ -9,6 +9,8 @@ import { ThemeSwitcher } from "@/lib/theme";
 const NAV_ITEMS = [
   { href: "/", icon: "🤖", labelKey: "nav.agents" },
   { href: "/sessions", icon: "💬", labelKey: "nav.sessions" },
+  { href: "/tools", icon: "🛠️", labelKey: "nav.tools" },
+  { href: "/skills", icon: "📦", labelKey: "nav.skills" },
   { href: "/pixel-office", icon: "🎮", labelKey: "nav.pixelOffice" },
 ];
 

@@ -14,6 +14,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "nav.overview": "总览",
     "nav.agents": "Agent 总览",
     "nav.sessions": "会话历史",
+    "nav.tools": "工具列表",
+    "nav.skills": "技能列表",
     "nav.pixelOffice": "像素办公室",
 
     // common
@@ -120,6 +122,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "nav.overview": "Overview",
     "nav.agents": "Agent Overview",
     "nav.sessions": "Sessions",
+    "nav.tools": "Tools",
+    "nav.skills": "Skills",
     "nav.pixelOffice": "Pixel Office",
 
     // common

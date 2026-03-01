@@ -11,6 +11,42 @@ const OPENCLAW_DIR = OPENCLAW_HOME;
 let configCache: { data: any; ts: number } | null = null;
 const CACHE_TTL_MS = 30_000;
 
+// 从主会话jsonl读取实际运行时模型（最近一条assistant消息的model字段）
+function getActiveModel(agentId: string): string | null {
+  const sessionsJsonPath = path.join(OPENCLAW_DIR, `agents/${agentId}/sessions/sessions.json`);
+  try {
+    const sessionsData = JSON.parse(fs.readFileSync(sessionsJsonPath, "utf-8"));
+    const mainKey = `agent:${agentId}:main`;
+    const mainSession = sessionsData[mainKey];
+    if (!mainSession?.sessionId) return null;
+    
+    const jsonlPath = path.join(OPENCLAW_DIR, `agents/${agentId}/sessions/${mainSession.sessionId}.jsonl`);
+    if (!fs.existsSync(jsonlPath)) return null;
+    
+    // Read last 50KB to find the most recent assistant message with model info
+    const stat = fs.statSync(jsonlPath);
+    const readSize = Math.min(stat.size, 50000);
+    const fd = fs.openSync(jsonlPath, "r");
+    const buf = Buffer.alloc(readSize);
+    fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
+    fs.closeSync(fd);
+    
+    const lines = buf.toString("utf-8").split("\n").filter(Boolean);
+    let lastModel: string | null = null;
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type === "message" && entry.message?.role === "assistant" && entry.message?.model) {
+          lastModel = entry.message.provider 
+            ? `${entry.message.provider}/${entry.message.model}` 
+            : entry.message.model;
+        }
+      } catch { /* skip */ }
+    }
+    return lastModel;
+  } catch { return null; }
+}
+
 // 从配置的 allowFrom 读取用户 id，用于构建 session key
 
 // 读取 agent 的 session 状态（最近活跃时间、token 用量）- 从 jsonl 文件解析
@@ -418,7 +454,7 @@ export async function GET() {
         }
       }
 
-      return { id, name, emoji, model, platforms };
+      return { id, name, emoji, model, platforms, activeModel: getActiveModel(id) };
     }));
 
     // 为每个 agent 添加 session 状态

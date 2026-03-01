@@ -8,7 +8,7 @@
 - **技术栈：** Next.js 16 + React + TypeScript + Tailwind CSS
 
 ## 当前版本：v2.0
-**最新commit：** 19620a3 (2026-03-01 16:08)
+**最新commit：** 22d428d (2026-03-01 16:50)
 
 ### 核心功能
 1. **Agent Overview（首页）**
@@ -25,7 +25,19 @@
    - 真实名称显示（禹哥/酪酪/子代理）
    - 子代理消息智能识别（任务/announce/用户）
 
-3. **Pixel Office（像素小镇）**
+3. **Tools List（工具列表）** 🆕
+   - 显示所有agent卡片
+   - 点击agent展开显示该agent的工具列表
+   - 工具卡片显示名称、描述、调用次数
+   - 从session jsonl统计工具调用次数
+
+4. **Skills List（技能列表）** 🆕
+   - 显示所有agent卡片
+   - 点击agent展开显示该agent的技能列表
+   - 技能卡片显示名称、描述、emoji、调用次数
+   - 从SKILL.md解析技能信息
+
+5. **Pixel Office（像素小镇）**
    - 日式RPG风格可视化
    - Agent活动状态展示
    - 建筑交互（家/工作坊/图书馆/网咖）
@@ -35,9 +47,29 @@
 - `/api/sessions/[agentId]` - 会话列表
 - `/api/sessions/[agentId]/[sessionId]` - 会话详情
 - `/api/sessions/[agentId]/[sessionId]/compact` - 压缩上下文
+- `/api/tools/[agentId]` - 工具列表（统计调用次数）🆕
+- `/api/skills/[agentId]` - 技能列表（解析SKILL.md）🆕
 - `/api/agent-activity` - Agent活动状态
 - `/api/gateway-health` - Gateway健康检查
 - `/api/pixel-office/layout` - 像素小镇布局
+
+## 部署配置
+
+### Systemd服务（持久化运行）
+- **服务名：** clawtown.service
+- **配置文件：** `/etc/systemd/system/clawtown.service`
+- **启动命令：** `sudo systemctl start clawtown`
+- **停止命令：** `sudo systemctl stop clawtown`
+- **重启命令：** `sudo systemctl restart clawtown`
+- **查看状态：** `sudo systemctl status clawtown`
+- **查看日志：** `cat /root/.openclaw/workspace/projects/clawtown/logs/clawtown.log`
+- **自动启动：** 已启用（开机自启）
+
+### 服务挂掉问题解决（2026-03-01）
+**问题：** 服务隔一段时间就挂掉
+**根因：** 没有使用进程管理工具，执行完就退出了
+**解决方案：** 配置systemd服务，设置自动重启（Restart=always, RestartSec=10）
+**关键配置：** 必须使用Node.js 22（Next.js 16要求>=20.9.0），直接调用next命令而非npm start
 
 ## 今日迭代记录（2026-03-01）
 

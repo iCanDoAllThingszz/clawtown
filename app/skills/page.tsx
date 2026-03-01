@@ -55,6 +55,8 @@ export default function SkillsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingSkills, setLoadingSkills] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   useEffect(() => {
     fetchWithRetry("/api/config")
@@ -87,6 +89,42 @@ export default function SkillsPage() {
       setSkills([]);
     } finally {
       setLoadingSkills(false);
+    }
+  };
+
+  const toggleExpand = (skillName: string) => {
+    setExpandedSkills((prev) => {
+      const next = new Set(prev);
+      if (next.has(skillName)) {
+        next.delete(skillName);
+      } else {
+        next.add(skillName);
+      }
+      return next;
+    });
+  };
+
+  const handleDelete = (skillName: string) => {
+    setDeleteTarget(skillName);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || !selectedAgent) return;
+
+    try {
+      const res = await fetch(`/api/skills/${selectedAgent}/${deleteTarget}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error("删除失败");
+
+      // 刷新技能列表
+      const refreshRes = await fetchWithRetry(`/api/skills/${selectedAgent}`);
+      const data: AgentSkills = await refreshRes.json();
+      setSkills(data.skills || []);
+      setDeleteTarget(null);
+    } catch (e: any) {
+      alert("删除失败：" + e.message);
     }
   };
 
@@ -152,27 +190,94 @@ export default function SkillsPage() {
             <div className="text-[var(--text-muted)]">{t("common.noData")}</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {skills.map((skill) => (
-                <div
-                  key={skill.name}
-                  className="p-4 rounded-lg bg-[var(--card)] border border-[var(--border)]"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    {skill.emoji && <span className="text-xl">{skill.emoji}</span>}
-                    <div className="font-medium text-[var(--text)]">
-                      {skill.name}
+              {skills.map((skill) => {
+                const isExpanded = expandedSkills.has(skill.name);
+                const shouldCollapse = skill.description.length > 100;
+
+                return (
+                  <div
+                    key={skill.name}
+                    className="p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] min-h-[180px] flex flex-col"
+                  >
+                    {/* 顶部：emoji + 名称 */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-2xl">{skill.emoji || "📦"}</span>
+                      <h4 className="text-base font-semibold text-[var(--text)]">
+                        {skill.name}
+                      </h4>
+                    </div>
+
+                    {/* 描述区域：固定高度，可折叠 */}
+                    <div
+                      className={`text-sm text-[var(--text-muted)] mb-3 ${
+                        isExpanded ? "" : "h-[60px] overflow-hidden"
+                      }`}
+                    >
+                      <p className={isExpanded ? "" : "line-clamp-3"}>
+                        {skill.description}
+                      </p>
+                    </div>
+
+                    {/* 展开/收起按钮 */}
+                    {shouldCollapse && (
+                      <button
+                        onClick={() => toggleExpand(skill.name)}
+                        className="text-xs text-[var(--accent)] hover:underline mb-2 text-left"
+                      >
+                        {isExpanded ? "收起" : "展开"}
+                      </button>
+                    )}
+
+                    {/* 底部：调用次数 + 删除按钮 */}
+                    <div className="mt-auto flex items-center justify-between">
+                      <span className="text-xs text-[var(--text-muted)]">
+                        调用次数: {skill.callCount > 0 ? skill.callCount : "N/A"}
+                      </span>
+                      <button
+                        onClick={() => handleDelete(skill.name)}
+                        className="px-3 py-1 rounded-lg bg-red-500/10 text-red-400 text-xs hover:bg-red-500/20 transition"
+                      >
+                        🗑️ 删除
+                      </button>
                     </div>
                   </div>
-                  <div className="text-sm text-[var(--text-muted)] mb-2">
-                    {skill.description}
-                  </div>
-                  <div className="text-xs text-[var(--text-muted)]">
-                    调用次数: {skill.callCount > 0 ? skill.callCount : "N/A"}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* 删除确认对话框 */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-6 max-w-md">
+            <h3 className="text-lg font-bold text-red-400 mb-2">⚠️ 危险操作</h3>
+            <p className="text-sm text-[var(--text-muted)] mb-4">
+              确定要删除技能{" "}
+              <strong className="text-[var(--text)]">{deleteTarget}</strong> 吗？
+              此操作将：
+            </p>
+            <ul className="text-xs text-[var(--text-muted)] mb-4 space-y-1">
+              <li>• 删除技能文件夹（skills/{deleteTarget}/）</li>
+              <li>• 从核心文件中移除相关引用</li>
+              <li>• 此操作不可撤销</li>
+            </ul>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 px-4 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 px-4 py-2 rounded-lg bg-red-500 text-white text-sm hover:bg-red-600 transition"
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

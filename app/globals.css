@@ -54,3 +54,10 @@ body {
   border-top: 1px solid var(--border);
   padding: 12px 16px;
 }
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

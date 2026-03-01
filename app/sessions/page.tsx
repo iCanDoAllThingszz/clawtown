@@ -190,6 +190,7 @@ function SessionDetailPanel({ agentId, sessionId, sessionType, userName, agentNa
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedMessages, setExpandedMessages] = useState<Set<number>>(new Set());
 
   const fetchDetail = useCallback(() => {
     setLoading(true);
@@ -202,6 +203,18 @@ function SessionDetailPanel({ agentId, sessionId, sessionType, userName, agentNa
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [agentId, sessionId]);
+
+  const toggleMessageExpand = (index: number) => {
+    setExpandedMessages((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     fetchDetail();
@@ -295,9 +308,24 @@ function SessionDetailPanel({ agentId, sessionId, sessionType, userName, agentNa
                   </span>
                   <span className="text-[var(--text-muted)] text-[10px]">{formatTime(msg.timestamp)}</span>
                 </div>
-                <p className="text-[var(--text)] whitespace-pre-wrap break-words leading-relaxed">
-                  {msg.text.length > 300 ? msg.text.slice(0, 300) + "..." : msg.text}
-                </p>
+                <div className="text-[var(--text)] leading-relaxed">
+                  <p className="whitespace-pre-wrap break-words">
+                    {(() => {
+                      const isExpanded = expandedMessages.has(i);
+                      const shouldCollapse = msg.text.length > 300;
+                      const displayText = shouldCollapse && !isExpanded ? msg.text.slice(0, 300) : msg.text;
+                      return displayText;
+                    })()}
+                  </p>
+                  {msg.text.length > 300 && (
+                    <button
+                      onClick={() => toggleMessageExpand(i)}
+                      className="text-xs text-[var(--accent)] hover:underline mt-1"
+                    >
+                      {expandedMessages.has(i) ? "收起" : "展开完整消息"}
+                    </button>
+                  )}
+                </div>
                 {msg.tokens && (
                   <div className="mt-1.5 text-[10px] text-[var(--text-muted)]">
                     Token: ↑{msg.tokens.input?.toLocaleString()} ↓{msg.tokens.output?.toLocaleString()}

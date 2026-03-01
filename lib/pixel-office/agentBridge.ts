@@ -26,7 +26,7 @@ const prevSubagentKeys = new Map<string, Set<string>>()
 const prevAgentStates = new Map<string, string>()
 
 /** Track which room each agent is currently in */
-const prevAgentRooms = new Map<string, 'work' | 'lounge'>()
+const prevAgentRooms = new Map<string, 'work' | 'chat' | 'lounge'>()
 
 export function syncAgentsToOffice(
   activities: AgentActivity[],
@@ -66,7 +66,14 @@ export function syncAgentsToOffice(
       ch.label = activity.name || activity.id
 
       // Determine target room based on status
-      const targetRoom: 'work' | 'lounge' = activity.status === 'idle' ? 'lounge' : 'work'
+      let targetRoom: 'work' | 'chat' | 'lounge'
+      if (activity.status === 'idle') {
+        targetRoom = 'lounge'
+      } else if (activity.status === 'chatting') {
+        targetRoom = 'chat'
+      } else {
+        targetRoom = 'work'
+      }
 
       // Move agent to appropriate room if status changed
       const prevRoom = prevAgentRooms.get(activity.id)

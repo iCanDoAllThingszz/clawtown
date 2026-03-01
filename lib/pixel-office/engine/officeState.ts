@@ -630,13 +630,24 @@ export class OfficeState {
   }
 
   /** Move an agent to a seat in the specified room */
-  moveAgentToRoom(agentId: number, room: 'work' | 'lounge'): void {
+  moveAgentToRoom(agentId: number, room: 'work' | 'chat' | 'lounge'): void {
     const ch = this.characters.get(agentId)
     if (!ch) return
 
-    // Work room: rows 0-9, Lounge: rows 11-16
-    const targetRowMin = room === 'work' ? 0 : 11
-    const targetRowMax = room === 'work' ? 9 : 16
+    // Work room: rows 0-9, Chat room: rows 10-10, Lounge: rows 11-16
+    let targetRowMin: number
+    let targetRowMax: number
+    
+    if (room === 'work') {
+      targetRowMin = 0
+      targetRowMax = 9
+    } else if (room === 'chat') {
+      targetRowMin = 10
+      targetRowMax = 10
+    } else { // lounge
+      targetRowMin = 11
+      targetRowMax = 16
+    }
 
     // Find a free seat in the target room
     let targetSeatId: string | null = null

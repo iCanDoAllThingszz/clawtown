@@ -1,57 +1,60 @@
 import { OfficeState } from './engine/officeState'
 
-export interface SubagentInfo {
-  toolId: string
-  label: string
-}
-
 export interface AgentActivity {
   id: string
   name: string
   label?: string
-  status: 'idle' | 'chatting' | 'working'
+  status: 'idle' | 'working' | 'delegating'
   activity: string
   lastUpdate: number
-  subagents?: SubagentInfo[]
   // Backward compatibility fields
   agentId?: string
   state?: string
   emoji?: string
 }
 
-/** Track which subagent toolIds were active last sync, per parent agent */
-const prevSubagentKeys = new Map<string, Set<string>>()
+export interface SubagentActivity {
+  id: string
+  label: string
+  status: 'working'
+  activity: string
+  lastUpdate: number
+}
 
-/** Track previous agent states to detect offline→working transitions */
+/** Track which subagent IDs are active */
+const prevSubagentIds = new Set<string>()
+
+/** Track previous agent states to detect state changes */
 const prevAgentStates = new Map<string, string>()
 
 /** Track which room each agent is currently in */
 const prevAgentRooms = new Map<string, 'work' | 'chat' | 'lounge'>()
 
+/** Track subagent characters that are completing (for fade out animation) */
+const completingSubagents = new Map<string, NodeJS.Timeout>()
+
 export function syncAgentsToOffice(
-  activities: AgentActivity[],
+  mainAgents: AgentActivity[],
+  subagents: SubagentActivity[],
   office: OfficeState,
   agentIdMap: Map<string, number>,
   nextIdRef: { current: number },
 ): void {
-  const currentAgentIds = new Set(activities.map(a => a.id))
+  const currentAgentIds = new Set(mainAgents.map(a => a.id))
 
-  // Remove agents that are no longer present
+  // Remove main agents that are no longer present
   for (const [agentId, charId] of agentIdMap) {
     if (!currentAgentIds.has(agentId)) {
       office.removeAllSubagents(charId)
       office.removeAgent(charId)
       agentIdMap.delete(agentId)
-      prevSubagentKeys.delete(agentId)
       prevAgentStates.delete(agentId)
       prevAgentRooms.delete(agentId)
     }
   }
 
-  for (const activity of activities) {
-    // For now, we don't remove agents when idle - they stay in the office
-    // The main agent always stays, subagents come and go
-
+  // Sync main agents
+  for (const activity of mainAgents) {
     let charId = agentIdMap.get(activity.id)
     if (charId === undefined) {
       charId = nextIdRef.current++
@@ -66,13 +69,19 @@ export function syncAgentsToOffice(
       ch.label = activity.name || activity.id
 
       // Determine target room based on status
+      // working -> chat (聊天室), delegating -> work (工作室), idle -> lounge (休息室)
       let targetRoom: 'work' | 'chat' | 'lounge'
-      if (activity.status === 'idle') {
-        targetRoom = 'lounge'
-      } else if (activity.status === 'chatting') {
-        targetRoom = 'chat'
-      } else {
-        targetRoom = 'work'
+      switch (activity.status) {
+        case 'delegating':
+          targetRoom = 'work' // 分派任务时去工作室
+          break
+        case 'working':
+          targetRoom = 'chat' // 工作中在聊天室
+          break
+        case 'idle':
+        default:
+          targetRoom = 'lounge' // 休息时去休息室
+          break
       }
 
       // Move agent to appropriate room if status changed
@@ -85,14 +94,11 @@ export function syncAgentsToOffice(
       // Update agent state
       switch (activity.status) {
         case 'working':
+        case 'delegating':
           office.setAgentActive(charId, true)
-          // Extract tool name from activity string like "执行工具: xxx"
-          const toolMatch = activity.activity.match(/执行工具:\s*(.+)/)
+          // Extract tool name from activity string
+          const toolMatch = activity.activity.match(/调用(.+)/)
           office.setAgentTool(charId, toolMatch ? toolMatch[1] : null)
-          break
-        case 'chatting':
-          office.setAgentActive(charId, true)
-          office.setAgentTool(charId, null)
           break
         case 'idle':
         default:
@@ -102,31 +108,70 @@ export function syncAgentsToOffice(
       }
     }
 
-    // Sync subagents
-    const currentSubKeys = new Set<string>()
-    if (activity.subagents) {
-      for (const sub of activity.subagents) {
-        currentSubKeys.add(sub.toolId)
-        const existingSubId = office.getSubagentId(charId, sub.toolId)
-        if (existingSubId === null) {
-          const subId = office.addSubagent(charId, sub.toolId)
-          office.setAgentActive(subId, true)
-          // Subagents always work in the work room
-          office.moveAgentToRoom(subId, 'work')
-        }
+    prevAgentStates.set(activity.id, activity.status)
+  }
+
+  // Sync subagents - manage lifecycle
+  const currentSubIds = new Set(subagents.map(s => s.id))
+
+  // Remove subagents that are no longer active (move to lounge first, then remove)
+  for (const [subIdStr, timeout] of completingSubagents) {
+    clearTimeout(timeout)
+    completingSubagents.delete(subIdStr)
+  }
+
+  // Check for subagents that need to be removed
+  for (const [charId, ch] of office.characters) {
+    if (ch.label && ch.label.startsWith('subagent:')) {
+      const subId = ch.label
+      if (!currentSubIds.has(subId)) {
+        // Subagent completed - move to lounge first
+        office.moveAgentToRoom(charId, 'lounge')
+        // Remove after 2 seconds
+        const timeout = setTimeout(() => {
+          office.removeAgent(charId)
+          completingSubagents.delete(subId)
+        }, 2000)
+        completingSubagents.set(subId, timeout)
+      }
+    }
+  }
+
+  // Add or update subagents
+  for (const sub of subagents) {
+    // Find if subagent character already exists
+    let subCharId: number | null = null
+    for (const [charId, ch] of office.characters) {
+      if (ch.label === sub.id) {
+        subCharId = charId
+        break
       }
     }
 
-    // Remove subagents that are no longer active
-    const prevKeys = prevSubagentKeys.get(activity.id)
-    if (prevKeys) {
-      for (const toolId of prevKeys) {
-        if (!currentSubKeys.has(toolId)) {
-          office.removeSubagent(charId, toolId)
-        }
+    if (subCharId === null) {
+      // New subagent - spawn in lounge first
+      subCharId = nextIdRef.current++
+      office.addAgent(subCharId, undefined, undefined, undefined, undefined, true)
+      const ch = office.characters.get(subCharId)
+      if (ch) {
+        ch.label = sub.id
+        office.moveAgentToRoom(subCharId, 'lounge')
+        // After 1 second, move to work room
+        setTimeout(() => {
+          office.moveAgentToRoom(subCharId!, 'work')
+          office.setAgentActive(subCharId!, true)
+          office.setAgentTool(subCharId!, sub.activity)
+        }, 1000)
       }
+    } else {
+      // Update existing subagent
+      office.setAgentActive(subCharId, true)
+      office.setAgentTool(subCharId, sub.activity)
     }
-    prevSubagentKeys.set(activity.id, currentSubKeys)
-    prevAgentStates.set(activity.id, activity.status)
+  }
+
+  prevSubagentIds.clear()
+  for (const sub of subagents) {
+    prevSubagentIds.add(sub.id)
   }
 }

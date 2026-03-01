@@ -12,29 +12,42 @@ export interface AgentActivity {
   id: string
   name: string
   label?: string
-  status: 'idle' | 'chatting' | 'working'
+  status: 'idle' | 'working' | 'delegating'
   activity: string
   lastUpdate: number
-  subagents?: SubagentInfo[]
   // Backward compatibility fields
   agentId?: string
   state?: string
   emoji?: string
 }
 
-interface ParsedState {
-  status: 'idle' | 'chatting' | 'working'
+export interface SubagentActivity {
+  id: string
+  label: string
+  status: 'working'
   activity: string
   lastUpdate: number
+}
+
+interface ParsedMainAgentState {
+  status: 'idle' | 'working' | 'delegating'
+  activity: string
+  lastUpdate: number
+}
+
+interface ParsedState {
+  mainAgent: ParsedMainAgentState
   subagents: SubagentInfo[]
 }
 
 /** Parse the last N lines of the most recent session file for activity patterns */
 async function parseSessionActivity(agentSessionsDir: string): Promise<ParsedState> {
   const result: ParsedState = {
-    status: 'idle',
-    activity: '',
-    lastUpdate: 0,
+    mainAgent: {
+      status: 'idle',
+      activity: '',
+      lastUpdate: 0,
+    },
     subagents: []
   }
 
@@ -56,7 +69,7 @@ async function parseSessionActivity(agentSessionsDir: string): Promise<ParsedSta
     }
     if (!latestFile) return result
 
-    result.lastUpdate = latestTime
+    result.mainAgent.lastUpdate = latestTime
 
     // Read last 16KB for recent activity
     const stat = await fs.stat(latestFile)
@@ -71,8 +84,8 @@ async function parseSessionActivity(agentSessionsDir: string): Promise<ParsedSta
 
     // Look for recent tool_use entries
     let lastToolUse: string | null = null
-    let lastSkillUse: string | null = null
     let isHeartbeat = false
+    let recentSpawnTime: number | null = null
     const activeSubtasks = new Map<string, string>()
 
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -80,7 +93,7 @@ async function parseSessionActivity(agentSessionsDir: string): Promise<ParsedSta
       try {
         const record = JSON.parse(line)
 
-        // Check for heartbeat
+        // Check for heartbeat (last assistant message)
         if (record.type === 'user' && record.message?.content) {
           const content = typeof record.message.content === 'string' ? record.message.content : ''
           if (content.includes('HEARTBEAT') || content.includes('Read HEARTBEAT.md')) {
@@ -94,23 +107,29 @@ async function parseSessionActivity(agentSessionsDir: string): Promise<ParsedSta
           for (const block of blocks) {
             if (block.type === 'tool_use') {
               const toolName = block.name || 'exec'
-              
-              // Skills: sessions_spawn, or anything with subtask description
-              const isSkill = toolName === 'sessions_spawn' || 
-                             (block.input?.task && typeof block.input.task === 'string')
-              
+
+              // Check for sessions_spawn (delegating)
+              if (toolName === 'sessions_spawn') {
+                recentSpawnTime = Date.now()
+                const task = block.input?.task as string | undefined
+                activeSubtasks.set(block.id, task || 'Subtask')
+              }
+
+              // Check for skill execution (subtask with task param)
+              const hasTask = block.input?.task && typeof block.input.task === 'string'
+              if (hasTask && toolName !== 'sessions_spawn') {
+                const task = block.input.task as string
+                activeSubtasks.set(block.id, task)
+              }
+
               if (block.input?.description) {
                 const desc = block.input.description as string
-                // Check if it's a subtask (skill execution)
-                if (desc.startsWith('Subtask:') || desc.includes('subtask') || isSkill) {
+                if (desc.startsWith('Subtask:') || desc.includes('subtask')) {
                   activeSubtasks.set(block.id, desc)
-                  lastSkillUse = `执行技能`
-                } else {
+                } else if (toolName !== 'sessions_spawn') {
                   lastToolUse = `${toolName}`
                 }
-              } else if (isSkill) {
-                lastSkillUse = `执行技能`
-              } else {
+              } else if (toolName !== 'sessions_spawn') {
                 lastToolUse = `${toolName}`
               }
             }
@@ -131,29 +150,40 @@ async function parseSessionActivity(agentSessionsDir: string): Promise<ParsedSta
       }
     }
 
-    // Determine status
+    // Determine main agent status
     const now = Date.now()
     const timeDiff = now - latestTime
+    const spawnDiff = recentSpawnTime ? now - recentSpawnTime : null
 
-    // Heartbeat within 2 minutes = idle (休息中)
-    if (isHeartbeat && timeDiff < 2 * 60 * 1000) {
-      result.status = 'idle'
-      result.activity = '摸鱼中 🐟'
-    } else if (timeDiff > 10 * 60 * 1000) {
-      // 10 minutes no activity = idle
-      result.status = 'idle'
-      result.activity = '下班了？'
-    } else if (lastSkillUse) {
-      // Skill execution = working (工作室)
-      result.status = 'working'
-      result.activity = lastSkillUse
-    } else if (lastToolUse) {
-      // Tool use = chatting (聊天室)
-      result.status = 'chatting'
-      result.activity = `调用${lastToolUse}`
-    } else {
-      result.status = 'chatting'
-      result.activity = '思考人生中...'
+    // Priority 1: Check for recent sessions_spawn (within 30 seconds) = delegating
+    if (spawnDiff !== null && spawnDiff < 30 * 1000) {
+      result.mainAgent.status = 'delegating'
+      result.mainAgent.activity = '分派任务中...'
+    }
+    // Priority 2: Check for HEARTBEAT_OK (within 2 minutes) = idle
+    else if (isHeartbeat && timeDiff < 2 * 60 * 1000) {
+      result.mainAgent.status = 'idle'
+      result.mainAgent.activity = '摸鱼中 🐟'
+    }
+    // Priority 3: No activity for 10 minutes = idle
+    else if (timeDiff > 10 * 60 * 1000) {
+      result.mainAgent.status = 'idle'
+      result.mainAgent.activity = '下班了？'
+    }
+    // Priority 4: Has active subtasks = working
+    else if (activeSubtasks.size > 0) {
+      result.mainAgent.status = 'working'
+      result.mainAgent.activity = '工作中...'
+    }
+    // Priority 5: Has tool use = working
+    else if (lastToolUse) {
+      result.mainAgent.status = 'working'
+      result.mainAgent.activity = `调用${lastToolUse}`
+    }
+    // Default: working in chat room
+    else {
+      result.mainAgent.status = 'working'
+      result.mainAgent.activity = '思考人生中...'
     }
 
     // Add active subtasks
@@ -171,13 +201,14 @@ export async function GET() {
   const openclawDir = path.join(os.homedir(), '.openclaw')
   const agentsDir = path.join(openclawDir, 'agents')
 
-  const agents: AgentActivity[] = []
+  const mainAgents: AgentActivity[] = []
+  const subagents: SubagentActivity[] = []
 
   try {
     // Fetch from /api/config instead
     const configRes = await fetch('http://localhost:3001/api/config')
     const config = await configRes.json()
-    
+
     if (config.agents && Array.isArray(config.agents)) {
       for (const agent of config.agents) {
           let agentSessionsDir = ''
@@ -195,32 +226,24 @@ export async function GET() {
             id: agent.id,
             agentId: agent.id, // Backward compatibility
             name: agent.name || agent.id,
-            status: parsedState?.status || 'idle',
-            state: parsedState?.status || 'idle', // Backward compatibility
-            activity: parsedState?.activity || '休息中',
-            lastUpdate: parsedState?.lastUpdate || Date.now(),
+            status: parsedState?.mainAgent.status || 'idle',
+            state: parsedState?.mainAgent.status || 'idle', // Backward compatibility
+            activity: parsedState?.mainAgent.activity || '休息中',
+            lastUpdate: parsedState?.mainAgent.lastUpdate || Date.now(),
             emoji: agent.identity?.emoji || agent.emoji || '🤖', // Backward compatibility
           }
 
-          if (parsedState?.subagents && parsedState.subagents.length > 0) {
-            activity.subagents = parsedState.subagents
-          }
-
-          agents.push(activity)
+          mainAgents.push(activity)
 
           // Add subagents as separate entries
           if (parsedState?.subagents) {
-            for (const subagent of parsedState.subagents) {
-              agents.push({
-                id: `subagent:${subagent.toolId}`,
-                agentId: `subagent:${subagent.toolId}`, // Backward compatibility
-                name: agent.name || agent.id,
-                label: subagent.label.replace(/^Subtask:\s*/, ''),
+            for (const sub of parsedState.subagents) {
+              subagents.push({
+                id: `subagent:${sub.toolId}`,
+                label: sub.label.replace(/^Subtask:\s*/, ''),
                 status: 'working',
-                state: 'working', // Backward compatibility
                 activity: '执行任务',
-                lastUpdate: parsedState.lastUpdate,
-                emoji: '🤖',
+                lastUpdate: parsedState.mainAgent.lastUpdate,
               })
             }
           }
@@ -230,5 +253,5 @@ export async function GET() {
     console.error('Error reading agent activity:', error)
   }
 
-  return NextResponse.json({ agents })
+  return NextResponse.json({ agents: mainAgents, subagents })
 }

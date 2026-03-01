@@ -6,7 +6,7 @@ import { renderFrame } from '@/lib/pixel-office/engine/renderer'
 import { buildGatewayUrl } from "@/lib/gateway-url"
 import type { EditorRenderState } from '@/lib/pixel-office/engine/renderer'
 import type { ContributionData } from '@/lib/pixel-office/engine/renderer'
-import { syncAgentsToOffice, AgentActivity } from '@/lib/pixel-office/agentBridge'
+import { syncAgentsToOffice, AgentActivity, SubagentActivity } from '@/lib/pixel-office/agentBridge'
 import { EditorState } from '@/lib/pixel-office/editor/editorState'
 import {
   paintTile, placeFurniture, removeFurniture, moveFurniture,
@@ -123,6 +123,7 @@ export default function PixelOfficePage() {
   const prevAgentStatesRef = useRef<Map<string, string>>(new Map())
 
   const [agents, setAgents] = useState<AgentActivity[]>([])
+  const [subagents, setSubagents] = useState<SubagentActivity[]>([])
   const [hoveredAgentId, setHoveredAgentId] = useState<number | null>(null)
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const agentStatsRef = useRef<Map<string, { sessionCount: number; messageCount: number; totalTokens: number; todayAvgResponseMs: number; weeklyResponseMs: number[]; weeklyTokens: number[]; lastActive: number | null }>>(new Map())
@@ -342,10 +343,12 @@ export default function PixelOfficePage() {
         const res = await fetch('/api/agent-activity')
         const data = await res.json()
         const newAgents: AgentActivity[] = data.agents || []
+        const newSubagents: SubagentActivity[] = data.subagents || []
         setAgents(newAgents)
+        setSubagents(newSubagents)
 
         if (officeRef.current) {
-          syncAgentsToOffice(newAgents, officeRef.current, agentIdMapRef.current, nextIdRef.current)
+          syncAgentsToOffice(newAgents, newSubagents, officeRef.current, agentIdMapRef.current, nextIdRef.current)
         }
 
         // Play sound when agent transitions to waiting
@@ -359,11 +362,11 @@ export default function PixelOfficePage() {
           }
           // Broadcast notification on meaningful state transitions
           if (prev && prev !== agentState) {
-            if (agentState === 'working' && prev !== 'working') {
+            if ((agentState === 'working' || agentState === 'delegating') && prev !== 'working' && prev !== 'delegating') {
               const bid = Date.now() + Math.random()
               setBroadcasts(b => [...b, { id: bid, emoji: agentEmoji, text: `${agentEmoji} ${agent.name} ${t('pixelOffice.broadcast.online')}` }])
               setTimeout(() => setBroadcasts(b => b.filter(x => x.id !== bid)), 5000)
-            } else if (agentState === 'offline' && prev === 'working') {
+            } else if (agentState === 'idle' && (prev === 'working' || prev === 'delegating')) {
               const bid = Date.now() + Math.random()
               setBroadcasts(b => [...b, { id: bid, emoji: agentEmoji, text: `${agentEmoji} ${agent.name} ${t('pixelOffice.broadcast.offline')}` }])
               setTimeout(() => setBroadcasts(b => b.filter(x => x.id !== bid)), 5000)
@@ -703,8 +706,17 @@ export default function PixelOfficePage() {
           const charId = office.getCharacterAt(worldX, worldY)
           if (charId !== null) {
             const map = agentIdMapRef.current
+            // Check main agents first
+            let found = false
             for (const [aid, cid] of map.entries()) {
-              if (cid === charId) { setSelectedAgentId(aid); break }
+              if (cid === charId) { setSelectedAgentId(aid); found = true; break }
+            }
+            // If not a main agent, check subagents
+            if (!found) {
+              const ch = office.characters.get(charId)
+              if (ch?.label && ch.label.startsWith('subagent:')) {
+                setSelectedAgentId(ch.label)
+              }
             }
           } else {
             setSelectedAgentId(null)
@@ -980,21 +992,32 @@ export default function PixelOfficePage() {
         <div className="flex flex-wrap gap-2 flex-1">
           {agents.map(agent => (
             <div key={agent.agentId} className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors ${
-              agent.state === 'working' ? 'bg-green-500/10 border-green-500/30 text-green-500 animate-pulse' :
+              agent.state === 'working' || agent.state === 'delegating' ? 'bg-green-500/10 border-green-500/30 text-green-500 animate-pulse' :
               agent.state === 'idle' ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500 animate-pulse' :
               'bg-slate-600/20 border-slate-500/40 text-slate-300'
             }`}
-              {...(agent.state === 'working' ? { style: { animationDuration: '1.3s' } } : {})}
+              {...(agent.state === 'working' || agent.state === 'delegating' ? { style: { animationDuration: '1.3s' } } : {})}
             >
               <span>{agent.emoji}</span>
               <span className="text-sm">{agent.name}</span>
               {agent.state === 'working' && <span className="text-[10px] uppercase tracking-wider opacity-70">{t('pixelOffice.state.working')}</span>}
+              {agent.state === 'delegating' && <span className="text-[10px] uppercase tracking-wider opacity-70">{t('pixelOffice.state.delegating')}</span>}
               {agent.state === 'idle' && <span className="text-[10px] uppercase tracking-wider opacity-50">{t('pixelOffice.state.idle')}</span>}
               {agent.state === 'offline' && <span className="text-[10px] uppercase tracking-wider opacity-40">{t('pixelOffice.state.offline')}</span>}
               {agent.state === 'waiting' && <span className="text-[10px] uppercase tracking-wider opacity-60">{t('pixelOffice.state.waiting')}</span>}
             </div>
           ))}
-          {agents.length === 0 && (
+          {/* Subagents */}
+          {subagents.map(subagent => (
+            <div key={subagent.id} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-blue-500/10 border-blue-500/30 text-blue-500 animate-pulse"
+              style={{ animationDuration: '1.3s' }}
+            >
+              <span>🤖</span>
+              <span className="text-sm">{subagent.label}</span>
+              <span className="text-[10px] uppercase tracking-wider opacity-70">{t('pixelOffice.state.working')}</span>
+            </div>
+          ))}
+          {agents.length === 0 && subagents.length === 0 && (
             <div className="text-[var(--text-muted)] text-sm">{t('common.noData')}</div>
           )}
         </div>
@@ -1066,6 +1089,33 @@ export default function PixelOfficePage() {
 
         {/* Agent detail card (click) */}
         {selectedAgentId && !isEditMode && (() => {
+          // Check if it's a subagent
+          const subagent = subagents.find(s => s.id === selectedAgentId)
+          if (subagent) {
+            return (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40" onClick={() => setSelectedAgentId(null)}>
+                <div className="w-72 rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-4" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">🤖</span>
+                      <div>
+                        <div className="font-semibold text-[var(--text)]">{subagent.label}</div>
+                        <span className="text-[10px] uppercase tracking-wider text-green-400">{t('pixelOffice.state.working')}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => setSelectedAgentId(null)} className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none">×</button>
+                  </div>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between"><span className="text-[var(--text-muted)]">类型</span><span className="text-[var(--text)]">子代理</span></div>
+                    <div className="flex justify-between"><span className="text-[var(--text-muted)]">活动</span><span className="text-[var(--text)]">{subagent.activity}</span></div>
+                    <div className="flex justify-between"><span className="text-[var(--text-muted)]">最近更新</span><span className="text-[var(--text)]">{new Date(subagent.lastUpdate).toLocaleString('zh-CN')}</span></div>
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
+          // Main agent
           const agent = agents.find(a => a.agentId === selectedAgentId)
           const stats = agentStatsRef.current.get(selectedAgentId)
           if (!agent) return null
@@ -1082,7 +1132,7 @@ export default function PixelOfficePage() {
                     <div>
                       <div className="font-semibold text-[var(--text)]">{agent.name}</div>
                       <span className={`text-[10px] uppercase tracking-wider ${
-                        agent.state === 'working' ? 'text-green-400' :
+                        agent.state === 'working' || agent.state === 'delegating' ? 'text-green-400' :
                         agent.state === 'idle' ? 'text-yellow-400' : 'text-slate-400'
                       }`}>{t(`pixelOffice.state.${agent.state}`)}</span>
                     </div>

@@ -33,6 +33,43 @@ export function isReadingTool(tool: string | null): boolean {
   return READING_TOOLS.has(tool)
 }
 
+/** Check collision between agent and cat/lobster */
+function checkCollision(ch: Character, characters: Map<number, Character>): void {
+  // Only check for non-cat/lobster characters
+  if (ch.isCat || ch.isLobster) return
+  // Skip if already in collision
+  if (ch.collisionTimer > 0) return
+
+  for (const [id, other] of characters) {
+    if (other.isCat || other.isLobster) {
+      const distance = Math.sqrt(
+        Math.pow(ch.x - other.x, 2) + Math.pow(ch.y - other.y, 2)
+      )
+
+      // Collision threshold: 1 tile
+      if (distance < TILE_SIZE) {
+        if (other.isCat) {
+          ch.collisionTarget = 'cat'
+          ch.collisionText = '好可爱的猫咪~ 🐱'
+          ch.collisionTimer = 3 + Math.random() * 2 // 3-5秒
+        } else if (other.isLobster) {
+          ch.collisionTarget = 'lobster'
+          ch.collisionText = '啊！龙虾！😱'
+          ch.collisionTimer = 2 + Math.random() * 1 // 2-3秒
+        }
+
+        // Both stop
+        ch.state = CharacterState.IDLE
+        ch.path = []
+        other.state = CharacterState.IDLE
+        other.path = []
+        break
+      }
+    }
+  }
+}
+
+
 /** Pixel center of a tile */
 function tileCenter(col: number, row: number): { x: number; y: number } {
   return {
@@ -82,8 +119,10 @@ export function createCharacter(
     wanderCount: 0,
     wanderLimit: randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX),
     isActive: true,
-    isRoaming: false,
     seatId,
+    collisionTarget: null,
+    collisionTimer: 0,
+    collisionText: '',
     bubbleType: null,
     bubbleTimer: 0,
     seatTimer: 0,
@@ -112,8 +151,20 @@ export function updateCharacter(
   tileMap: TileTypeVal[][],
   blockedTiles: Set<string>,
   interactionPoints: InteractionPoint[],
+  characters: Map<number, Character>,
 ): void {
   ch.frameTimer += dt
+
+  // Handle collision timer
+  if (ch.collisionTimer > 0) {
+    ch.collisionTimer -= dt
+    if (ch.collisionTimer <= 0) {
+      ch.collisionTarget = null
+      ch.collisionText = ''
+    }
+    // Stay idle during collision
+    return
+  }
 
   // Pet-specific update: always wander, never sit
   if (ch.isCat || ch.isLobster) {
@@ -145,6 +196,9 @@ export function updateCharacter(
     }
 
     case CharacterState.IDLE: {
+      // Check collision with cat/lobster
+      checkCollision(ch, characters)
+      
       // No idle animation — static pose
       ch.frame = 0
       if (ch.seatTimer < 0) ch.seatTimer = 0 // clear turn-end sentinel
@@ -179,43 +233,6 @@ export function updateCharacter(
       // Countdown wander timer
       ch.wanderTimer -= dt
       if (ch.wanderTimer <= 0) {
-        // 漫游模式：持续在指定区域内随机移动，偶尔坐下
-        if (ch.isRoaming) {
-          // 30%概率坐到座位上休息
-          if (Math.random() < 0.3 && ch.seatId) {
-            const seat = seats.get(ch.seatId)
-            if (seat) {
-              const path = findPath(ch.tileCol, ch.tileRow, seatGridCol(seat), seatGridRow(seat), tileMap, blockedTiles)
-              if (path.length > 0) {
-                ch.path = path
-                ch.moveProgress = 0
-                ch.state = CharacterState.WALK
-                ch.frame = 0
-                ch.frameTimer = 0
-                ch.wanderTimer = randomRange(3, 8) // 坐一会儿
-                break
-              }
-            }
-          }
-          // 70%概率继续随机走动（限制在聊天室区域：rows 0-9, cols 10-20）
-          const roamingTiles = walkableTiles.filter(t => 
-            t.row >= 0 && t.row <= 9 && t.col >= 10 && t.col <= 20
-          )
-          if (roamingTiles.length > 0) {
-            const target = roamingTiles[Math.floor(Math.random() * roamingTiles.length)]
-            const path = findPath(ch.tileCol, ch.tileRow, target.col, target.row, tileMap, blockedTiles)
-            if (path.length > 0) {
-              ch.path = path
-              ch.moveProgress = 0
-              ch.state = CharacterState.WALK
-              ch.frame = 0
-              ch.frameTimer = 0
-            }
-          }
-          ch.wanderTimer = randomRange(2, 5) // 短暂停留后继续
-          break
-        }
-        
         // Check if we've wandered enough — return to seat for a rest
         if (ch.wanderCount >= ch.wanderLimit && ch.seatId) {
           const seat = seats.get(ch.seatId)

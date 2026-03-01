@@ -187,8 +187,10 @@ export interface Character {
   wanderCount: number
   wanderLimit: number
   isActive: boolean
-  isRoaming: boolean  // 漫游模式：随机走动，偶尔坐下
   seatId: string | null
+  collisionTarget: 'cat' | 'lobster' | null
+  collisionTimer: number
+  collisionText: string
   bubbleType: 'permission' | 'waiting' | null
   bubbleTimer: number
   seatTimer: number

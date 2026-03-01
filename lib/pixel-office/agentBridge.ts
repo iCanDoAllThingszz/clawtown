@@ -27,9 +27,6 @@ const prevSubagentIds = new Set<string>()
 /** Track previous agent states to detect state changes */
 const prevAgentStates = new Map<string, string>()
 
-/** Track which room each agent is currently in */
-const prevAgentRooms = new Map<string, 'work' | 'chat' | 'lounge'>()
-
 /** Track subagent characters that are completing (for fade out animation) */
 const completingSubagents = new Map<string, NodeJS.Timeout>()
 
@@ -49,7 +46,6 @@ export function syncAgentsToOffice(
       office.removeAgent(charId)
       agentIdMap.delete(agentId)
       prevAgentStates.delete(agentId)
-      prevAgentRooms.delete(agentId)
     }
   }
 
@@ -67,36 +63,6 @@ export function syncAgentsToOffice(
     const ch = office.characters.get(charId)
     if (ch) {
       ch.label = activity.name || activity.id
-
-      // Determine target room based on status
-      // working -> chat (聊天室), delegating -> work (工作室), idle -> lounge (休息室)
-      let targetRoom: 'work' | 'chat' | 'lounge'
-      switch (activity.status) {
-        case 'delegating':
-          targetRoom = 'work' // 分派任务时去工作室
-          break
-        case 'working':
-          targetRoom = 'chat' // 工作中在聊天室
-          break
-        case 'idle':
-        default:
-          targetRoom = 'lounge' // 休息时去休息室
-          break
-      }
-
-      // Move agent to appropriate room if status changed
-      const prevRoom = prevAgentRooms.get(activity.id)
-      if (prevRoom !== targetRoom) {
-        office.moveAgentToRoom(charId, targetRoom)
-        prevAgentRooms.set(activity.id, targetRoom)
-        
-        // 主agent在聊天室时启用漫游模式（随机走动，偶尔坐下）
-        if (activity.id === 'main' && targetRoom === 'chat') {
-          office.setAgentRoaming(charId, true)
-        } else {
-          office.setAgentRoaming(charId, false)
-        }
-      }
 
       // Update agent state
       switch (activity.status) {
@@ -121,7 +87,7 @@ export function syncAgentsToOffice(
   // Sync subagents - manage lifecycle
   const currentSubIds = new Set(subagents.map(s => s.id))
 
-  // Remove subagents that are no longer active (move to lounge first, then remove)
+  // Remove subagents that are no longer active
   for (const [subIdStr, timeout] of completingSubagents) {
     clearTimeout(timeout)
     completingSubagents.delete(subIdStr)
@@ -132,9 +98,7 @@ export function syncAgentsToOffice(
     if (ch.label && ch.label.startsWith('subagent:')) {
       const subId = ch.label
       if (!currentSubIds.has(subId)) {
-        // Subagent completed - move to lounge first
-        office.moveAgentToRoom(charId, 'lounge')
-        // Remove after 2 seconds
+        // Subagent completed - remove after 2 seconds
         const timeout = setTimeout(() => {
           office.removeAgent(charId)
           completingSubagents.delete(subId)
@@ -156,19 +120,14 @@ export function syncAgentsToOffice(
     }
 
     if (subCharId === null) {
-      // New subagent - spawn in lounge first
+      // New subagent - spawn at door
       subCharId = nextIdRef.current++
       office.addAgent(subCharId, undefined, undefined, undefined, undefined, true)
       const ch = office.characters.get(subCharId)
       if (ch) {
         ch.label = sub.id
-        office.moveAgentToRoom(subCharId, 'lounge')
-        // After 1 second, move to work room
-        setTimeout(() => {
-          office.moveAgentToRoom(subCharId!, 'work')
-          office.setAgentActive(subCharId!, true)
-          office.setAgentTool(subCharId!, sub.activity)
-        }, 1000)
+        office.setAgentActive(subCharId, true)
+        office.setAgentTool(subCharId, sub.activity)
       }
     } else {
       // Update existing subagent

@@ -469,7 +469,7 @@ export class OfficeState {
   private updateHunterLobster(ch: Character, dt: number, idleTarget: Character | null): void {
     if (!idleTarget) {
       this.withOwnSeatUnblocked(ch, () =>
-        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints)
+        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints, this.characters)
       )
       return
     }
@@ -490,7 +490,7 @@ export class OfficeState {
       this.faceToward(ch, idleTarget)
       ch.wanderTimer = 60
       this.withOwnSeatUnblocked(ch, () =>
-        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints)
+        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints, this.characters)
       )
       return
     }
@@ -523,7 +523,7 @@ export class OfficeState {
     // Keep timer high so cat/lobster FSM won't pick a random wander target while tracking.
     ch.wanderTimer = 60
     this.withOwnSeatUnblocked(ch, () =>
-      updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints)
+      updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints, this.characters)
     )
 
     // Clamp after movement so it never catches the idle humanoid.
@@ -625,157 +625,6 @@ export class OfficeState {
       ch.frameTimer = 0
       if (!ch.isActive) {
         ch.seatTimer = INACTIVE_SEAT_TIMER_MIN_SEC + Math.random() * INACTIVE_SEAT_TIMER_RANGE_SEC
-      }
-    }
-  }
-
-  /** Move an agent to a seat in the specified room */
-  moveAgentToRoom(agentId: number, room: 'work' | 'chat' | 'lounge'): void {
-    const ch = this.characters.get(agentId)
-    if (!ch) return
-
-    // Work room (left): rows 0-9, cols 0-9 (4 PCs)
-    // Chat room (right): rows 0-9, cols 10+ (1 PC)
-    // Lounge: rows 11-16
-    let targetRowMin: number
-    let targetRowMax: number
-    let targetColMin: number | undefined
-    let targetColMax: number | undefined
-    
-    if (room === 'work') {
-      targetRowMin = 0
-      targetRowMax = 9
-      targetColMin = 0
-      targetColMax = 9
-    } else if (room === 'chat') {
-      targetRowMin = 0
-      targetRowMax = 9
-      targetColMin = 10
-      targetColMax = 20
-    } else { // lounge
-      targetRowMin = 11
-      targetRowMax = 16
-    }
-
-    // Find a free seat in the target room
-    let targetSeatId: string | null = null
-    let targetSeat: Seat | null = null
-
-    // First try to find a seat in the current seatId if it's in the right room
-    if (ch.seatId) {
-      const currentSeat = this.seats.get(ch.seatId)
-      if (currentSeat) {
-        const row = Math.round(currentSeat.seatRow)
-        const col = Math.round(currentSeat.seatCol)
-        const rowMatch = row >= targetRowMin && row <= targetRowMax
-        const colMatch = targetColMin === undefined || (col >= targetColMin && col <= targetColMax!)
-        if (rowMatch && colMatch) {
-          // Already in the right room
-          this.sendToSeat(agentId)
-          return
-        }
-      }
-    }
-
-    // Find a new seat in the target room
-    for (const [seatId, seat] of this.seats) {
-      if (seat.assigned) continue
-      const row = Math.round(seat.seatRow)
-      const col = Math.round(seat.seatCol)
-      const rowMatch = row >= targetRowMin && row <= targetRowMax
-      const colMatch = targetColMin === undefined || (col >= targetColMin && col <= targetColMax!)
-      if (rowMatch && colMatch) {
-        targetSeatId = seatId
-        targetSeat = seat
-        break
-      }
-    }
-
-    // If no free seat in target room, try to find any seat (including occupied)
-    if (!targetSeatId) {
-      for (const [seatId, seat] of this.seats) {
-        const row = Math.round(seat.seatRow)
-        const col = Math.round(seat.seatCol)
-        const rowMatch = row >= targetRowMin && row <= targetRowMax
-        const colMatch = targetColMin === undefined || (col >= targetColMin && col <= targetColMax!)
-        if (rowMatch && colMatch) {
-          targetSeatId = seatId
-          targetSeat = seat
-          break
-        }
-      }
-    }
-
-    if (targetSeatId && targetSeat) {
-      // 漫游模式下，不自动坐到座位上，只是移动到房间区域
-      if (ch.isRoaming) {
-        // 找到聊天室的座位（如果有的话）
-        for (const [seatId, seat] of this.seats) {
-          const row = Math.round(seat.seatRow)
-          const col = Math.round(seat.seatCol)
-          const rowMatch = row >= targetRowMin && row <= targetRowMax
-          const colMatch = targetColMin === undefined || (col >= targetColMin && col <= targetColMax!)
-          if (rowMatch && colMatch && !seat.assigned) {
-            ch.seatId = seatId
-            break
-          }
-        }
-        
-        // 随机选择房间内的一个可走位置
-        const walkableTiles = []
-        for (let r = targetRowMin; r <= targetRowMax; r++) {
-          for (let c = (targetColMin || 0); c <= (targetColMax || 20); c++) {
-            if (isWalkable(c, r, this.tileMap, this.blockedTiles)) {
-              walkableTiles.push({ col: c, row: r })
-            }
-          }
-        }
-        if (walkableTiles.length > 0) {
-          const randomTile = walkableTiles[Math.floor(Math.random() * walkableTiles.length)]
-          const path = findPath(ch.tileCol, ch.tileRow, randomTile.col, randomTile.row, this.tileMap, this.blockedTiles)
-          if (path.length > 0) {
-            ch.path = path
-            ch.moveProgress = 0
-            ch.state = CharacterState.WALK
-            ch.wanderTimer = 2 + Math.random() * 3 // 初始化漫游计时器
-          }
-        }
-        return
-      }
-      
-      // Release old seat if it was assigned
-      if (ch.seatId) {
-        const oldSeat = this.seats.get(ch.seatId)
-        if (oldSeat) {
-          oldSeat.assigned = false
-        }
-      }
-
-      // Assign new seat
-      targetSeat.assigned = true
-      ch.seatId = targetSeatId
-
-      // Walk to the new seat
-      const path = this.withOwnSeatUnblocked(ch, () =>
-        findPath(ch.tileCol, ch.tileRow, Math.round(targetSeat!.seatCol), Math.round(targetSeat!.seatRow), this.tileMap, this.blockedTiles)
-      )
-
-      if (path.length > 0) {
-        ch.path = path
-        ch.moveProgress = 0
-        ch.state = CharacterState.WALK
-        ch.frame = 0
-        ch.frameTimer = 0
-      } else {
-        // Already at seat - sit down
-        ch.tileCol = Math.round(targetSeat.seatCol)
-        ch.tileRow = Math.round(targetSeat.seatRow)
-        ch.x = targetSeat.seatCol * TILE_SIZE + TILE_SIZE / 2
-        ch.y = targetSeat.seatRow * TILE_SIZE + TILE_SIZE / 2
-        ch.dir = targetSeat.facingDir
-        ch.state = ch.isActive ? CharacterState.TYPE : CharacterState.IDLE
-        ch.frame = 0
-        ch.frameTimer = 0
       }
     }
   }
@@ -1020,18 +869,6 @@ export class OfficeState {
     }
   }
 
-  setAgentRoaming(id: number, roaming: boolean): void {
-    const ch = this.characters.get(id)
-    if (ch) {
-      ch.isRoaming = roaming
-      // 漫游模式下，不自动坐到座位上
-      if (roaming && ch.seatId) {
-        ch.seatId = null
-        ch.state = CharacterState.IDLE
-      }
-    }
-  }
-
   showPermissionBubble(id: number): void {
     const ch = this.characters.get(id)
     if (ch) {
@@ -1098,7 +935,7 @@ export class OfficeState {
 
       // Temporarily unblock own seat so character can pathfind to it
       this.withOwnSeatUnblocked(ch, () =>
-        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints)
+        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints, this.characters)
       )
 
       if (ch.isLobster) {

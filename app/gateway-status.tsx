@@ -39,15 +39,11 @@ export function GatewayStatus() {
 
   return (
     <div className="relative inline-flex items-center gap-2">
-      <a
-        href={health?.ok && health.webUrl ? resolveGatewayUrl(health.webUrl) : undefined}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-cyan-500/20 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/30 transition-colors cursor-pointer"
+      <span
+        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
       >
         🌐 Gateway
-        <span className="opacity-50 text-[10px]">↗</span>
-      </a>
+      </span>
       {!health ? (
         <span className="text-xs text-[var(--text-muted)]">--</span>
       ) : health.ok ? (

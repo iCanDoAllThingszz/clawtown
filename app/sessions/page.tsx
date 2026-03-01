@@ -243,6 +243,7 @@ function SessionList({ agentId }: { agentId: string }) {
   const [loading, setLoading] = useState(true);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [compacting, setCompacting] = useState<string | null>(null);
   const { t } = useI18n();
   const formatTimeAgo = useTimeAgo();
 
@@ -346,10 +347,40 @@ function SessionList({ agentId }: { agentId: string }) {
                   <div className="mb-2">
                     <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-1">
                       <span>{t("sessions.context")}</span>
-                      <span>
-                        {(s.totalTokens / 1000).toFixed(1)}k / {(s.contextTokens / 1000).toFixed(0)}k
-                        {" "}({(s.totalTokens / s.contextTokens * 100).toFixed(1)}%)
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span>
+                          {(s.totalTokens / 1000).toFixed(1)}k / {(s.contextTokens / 1000).toFixed(0)}k
+                          {" "}({(s.totalTokens / s.contextTokens * 100).toFixed(1)}%)
+                        </span>
+                        {s.totalTokens / s.contextTokens > 0.5 && s.sessionId && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (compacting) return;
+                              setCompacting(s.sessionId);
+                              fetch(`/api/sessions/${agentId}/${s.sessionId}/compact`, { method: "POST" })
+                                .then((r) => r.json())
+                                .then((d) => {
+                                  if (d.ok) {
+                                    setTimeout(fetchSessions, 2000);
+                                  } else {
+                                    alert("压缩失败: " + (d.error || "未知错误"));
+                                  }
+                                })
+                                .catch(() => alert("请求失败"))
+                                .finally(() => setCompacting(null));
+                            }}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium border transition ${
+                              compacting === s.sessionId
+                                ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30 cursor-wait"
+                                : "bg-orange-500/15 text-orange-300 border-orange-500/30 hover:bg-orange-500/25 cursor-pointer"
+                            }`}
+                            title="压缩上下文，释放Token空间"
+                          >
+                            {compacting === s.sessionId ? "⏳ 压缩中..." : "🧹 压缩"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="w-full h-1.5 rounded-full bg-[var(--bg)] overflow-hidden">
                       <div

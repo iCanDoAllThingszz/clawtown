@@ -71,6 +71,8 @@ async function parseSessionActivity(agentSessionsDir: string): Promise<ParsedSta
 
     // Look for recent tool_use entries
     let lastToolUse: string | null = null
+    let lastSkillUse: string | null = null
+    let isHeartbeat = false
     const activeSubtasks = new Map<string, string>()
 
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -78,21 +80,32 @@ async function parseSessionActivity(agentSessionsDir: string): Promise<ParsedSta
       try {
         const record = JSON.parse(line)
 
+        // Check for heartbeat
+        if (record.type === 'user' && record.message?.content) {
+          const content = typeof record.message.content === 'string' ? record.message.content : ''
+          if (content.includes('HEARTBEAT') || content.includes('Read HEARTBEAT.md')) {
+            isHeartbeat = true
+          }
+        }
+
         // Check for tool use
         if (record.type === 'assistant' && record.message?.content) {
           const blocks = Array.isArray(record.message.content) ? record.message.content : []
           for (const block of blocks) {
             if (block.type === 'tool_use') {
+              const toolName = block.name || 'exec'
+              
               if (block.input?.description) {
                 const desc = block.input.description as string
-                // Check if it's a subtask
+                // Check if it's a subtask (skill execution)
                 if (desc.startsWith('Subtask:') || desc.includes('subtask')) {
                   activeSubtasks.set(block.id, desc)
+                  lastSkillUse = `执行技能: ${desc.split(':')[1]?.trim() || 'unknown'}`
                 } else {
-                  lastToolUse = `执行工具: ${block.name || 'exec'}`
+                  lastToolUse = `${toolName}`
                 }
-              } else if (block.name) {
-                lastToolUse = `执行工具: ${block.name}`
+              } else {
+                lastToolUse = `${toolName}`
               }
             }
           }
@@ -116,16 +129,25 @@ async function parseSessionActivity(agentSessionsDir: string): Promise<ParsedSta
     const now = Date.now()
     const timeDiff = now - latestTime
 
-    if (timeDiff > 5 * 60 * 1000) {
-      // 5 minutes no activity = idle
+    // Heartbeat within 2 minutes = idle (休息中)
+    if (isHeartbeat && timeDiff < 2 * 60 * 1000) {
       result.status = 'idle'
-      result.activity = '休息中'
-    } else if (lastToolUse) {
+      result.activity = '摸鱼中 🐟'
+    } else if (timeDiff > 10 * 60 * 1000) {
+      // 10 minutes no activity = idle
+      result.status = 'idle'
+      result.activity = '下班了？'
+    } else if (lastSkillUse) {
+      // Skill execution = working (工作室)
       result.status = 'working'
-      result.activity = lastToolUse
+      result.activity = lastSkillUse
+    } else if (lastToolUse) {
+      // Tool use = chatting (聊天室)
+      result.status = 'chatting'
+      result.activity = `调用${lastToolUse}`
     } else {
       result.status = 'chatting'
-      result.activity = '聊天中'
+      result.activity = '思考人生中...'
     }
 
     // Add active subtasks

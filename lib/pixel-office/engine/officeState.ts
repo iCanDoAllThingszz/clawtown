@@ -629,6 +629,93 @@ export class OfficeState {
     }
   }
 
+  /** Move an agent to a seat in the specified room */
+  moveAgentToRoom(agentId: number, room: 'work' | 'lounge'): void {
+    const ch = this.characters.get(agentId)
+    if (!ch) return
+
+    // Work room: rows 0-9, Lounge: rows 11-16
+    const targetRowMin = room === 'work' ? 0 : 11
+    const targetRowMax = room === 'work' ? 9 : 16
+
+    // Find a free seat in the target room
+    let targetSeatId: string | null = null
+    let targetSeat: Seat | null = null
+
+    // First try to find a seat in the current seatId if it's in the right room
+    if (ch.seatId) {
+      const currentSeat = this.seats.get(ch.seatId)
+      if (currentSeat) {
+        const row = Math.round(currentSeat.seatRow)
+        if (row >= targetRowMin && row <= targetRowMax) {
+          // Already in the right room
+          this.sendToSeat(agentId)
+          return
+        }
+      }
+    }
+
+    // Find a new seat in the target room
+    for (const [seatId, seat] of this.seats) {
+      if (seat.assigned) continue
+      const row = Math.round(seat.seatRow)
+      if (row >= targetRowMin && row <= targetRowMax) {
+        targetSeatId = seatId
+        targetSeat = seat
+        break
+      }
+    }
+
+    // If no free seat in target room, try to find any seat (including occupied)
+    if (!targetSeatId) {
+      for (const [seatId, seat] of this.seats) {
+        const row = Math.round(seat.seatRow)
+        if (row >= targetRowMin && row <= targetRowMax) {
+          targetSeatId = seatId
+          targetSeat = seat
+          break
+        }
+      }
+    }
+
+    if (targetSeatId && targetSeat) {
+      // Release old seat if it was assigned
+      if (ch.seatId) {
+        const oldSeat = this.seats.get(ch.seatId)
+        if (oldSeat) {
+          oldSeat.assigned = false
+        }
+      }
+
+      // Assign new seat
+      targetSeat.assigned = true
+      ch.seatId = targetSeatId
+
+      // Walk to the new seat
+      const path = this.withOwnSeatUnblocked(ch, () =>
+        findPath(ch.tileCol, ch.tileRow, Math.round(targetSeat!.seatCol), Math.round(targetSeat!.seatRow), this.tileMap, this.blockedTiles)
+      )
+
+      if (path.length > 0) {
+        ch.path = path
+        ch.moveProgress = 0
+        ch.state = CharacterState.WALK
+        ch.frame = 0
+        ch.frameTimer = 0
+      } else {
+        // Already at seat - sit down
+        ch.tileCol = Math.round(targetSeat.seatCol)
+        ch.tileRow = Math.round(targetSeat.seatRow)
+        ch.x = targetSeat.seatCol * TILE_SIZE + TILE_SIZE / 2
+        ch.y = targetSeat.seatRow * TILE_SIZE + TILE_SIZE / 2
+        ch.dir = targetSeat.facingDir
+        ch.state = ch.isActive ? CharacterState.TYPE : CharacterState.IDLE
+        ch.frame = 0
+        ch.frameTimer = 0
+      }
+    }
+  }
+
   /** Walk an agent to an arbitrary walkable tile (right-click command) */
   walkToTile(agentId: number, col: number, row: number): boolean {
     const ch = this.characters.get(agentId)

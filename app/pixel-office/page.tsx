@@ -350,25 +350,28 @@ export default function PixelOfficePage() {
 
         // Play sound when agent transitions to waiting
         for (const agent of newAgents) {
-          const prev = prevAgentStatesRef.current.get(agent.agentId)
-          if (agent.state === 'waiting' && prev && prev !== 'waiting') {
+          const agentId = agent.agentId ?? agent.id
+          const agentState = agent.state ?? agent.status
+          const agentEmoji = agent.emoji ?? '🤖'
+          const prev = prevAgentStatesRef.current.get(agentId)
+          if (agentState === 'waiting' && prev && prev !== 'waiting') {
             playDoneSound()
           }
           // Broadcast notification on meaningful state transitions
-          if (prev && prev !== agent.state) {
-            if (agent.state === 'working' && prev !== 'working') {
+          if (prev && prev !== agentState) {
+            if (agentState === 'working' && prev !== 'working') {
               const bid = Date.now() + Math.random()
-              setBroadcasts(b => [...b, { id: bid, emoji: agent.emoji, text: `${agent.emoji} ${agent.name} ${t('pixelOffice.broadcast.online')}` }])
+              setBroadcasts(b => [...b, { id: bid, emoji: agentEmoji, text: `${agentEmoji} ${agent.name} ${t('pixelOffice.broadcast.online')}` }])
               setTimeout(() => setBroadcasts(b => b.filter(x => x.id !== bid)), 5000)
-            } else if (agent.state === 'offline' && prev === 'working') {
+            } else if (agentState === 'offline' && prev === 'working') {
               const bid = Date.now() + Math.random()
-              setBroadcasts(b => [...b, { id: bid, emoji: agent.emoji, text: `${agent.emoji} ${agent.name} ${t('pixelOffice.broadcast.offline')}` }])
+              setBroadcasts(b => [...b, { id: bid, emoji: agentEmoji, text: `${agentEmoji} ${agent.name} ${t('pixelOffice.broadcast.offline')}` }])
               setTimeout(() => setBroadcasts(b => b.filter(x => x.id !== bid)), 5000)
             }
           }
         }
         const stateMap = new Map<string, string>()
-        for (const a of newAgents) stateMap.set(a.agentId, a.state)
+        for (const a of newAgents) stateMap.set(a.agentId ?? a.id, a.state ?? a.status)
         prevAgentStatesRef.current = stateMap
       } catch (e) {
         console.error('Failed to fetch agents:', e)
@@ -1141,7 +1144,7 @@ export default function PixelOfficePage() {
         {/* Token ranking panel (whiteboard click) */}
         {showTokenRank && !isEditMode && (() => {
           const ranked = agents
-            .map(a => ({ ...a, tokens: agentStatsRef.current.get(a.agentId)?.totalTokens || 0 }))
+            .map(a => ({ ...a, agentKey: a.agentId ?? a.id, tokens: agentStatsRef.current.get(a.agentId ?? a.id)?.totalTokens || 0 }))
             .sort((a, b) => b.tokens - a.tokens)
           const maxTokens = ranked[0]?.tokens || 1
           return (
@@ -1156,11 +1159,11 @@ export default function PixelOfficePage() {
                 ) : (
                   <div className="space-y-2">
                     {ranked.map((a, i) => (
-                      <div key={a.agentId}>
+                      <div key={a.agentKey}>
                         <div className="flex items-center justify-between text-xs mb-0.5">
                           <span className="flex items-center gap-1.5">
                             <span className="text-[var(--text-muted)] w-4">{i + 1}.</span>
-                            <span>{a.emoji}</span>
+                            <span>{a.emoji ?? '🤖'}</span>
                             <span className="text-[var(--text)]">{a.name}</span>
                           </span>
                           <span className="text-[var(--text)] font-mono">{formatTokens(a.tokens)}</span>

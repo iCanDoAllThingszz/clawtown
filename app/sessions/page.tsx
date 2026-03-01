@@ -362,13 +362,15 @@ function SessionList({ agentId }: { agentId: string }) {
                                 .then((r) => r.json())
                                 .then((d) => {
                                   if (d.ok) {
-                                    setTimeout(fetchSessions, 2000);
+                                    // Async compaction — refresh after delay
+                                    setTimeout(fetchSessions, 15000);
+                                    setTimeout(() => setCompacting(null), 3000);
                                   } else {
                                     alert("压缩失败: " + (d.error || "未知错误"));
+                                    setCompacting(null);
                                   }
                                 })
-                                .catch(() => alert("请求失败"))
-                                .finally(() => setCompacting(null));
+                                .catch(() => { alert("请求失败"); setCompacting(null); });
                             }}
                             className={`px-1.5 py-0.5 rounded text-[10px] font-medium border transition ${
                               compacting === s.sessionId
@@ -377,7 +379,7 @@ function SessionList({ agentId }: { agentId: string }) {
                             }`}
                             title="压缩上下文，释放Token空间"
                           >
-                            {compacting === s.sessionId ? "⏳ 压缩中..." : "🧹 压缩"}
+                            {compacting === s.sessionId ? "⏳ 已触发" : "🧹 压缩"}
                           </button>
                         )}
                       </div>

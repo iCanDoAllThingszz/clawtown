@@ -115,6 +115,31 @@ export const CHARACTER_HIT_HEIGHT = 24
 export const TOOL_OVERLAY_VERTICAL_OFFSET = 32
 export const PULSE_ANIMATION_DURATION_SEC = 1.5
 
+// ── Programmer Quotes ───────────────────────────────────────────
+export const PROGRAMMER_QUOTES = [
+  "// 下次再改",
+  "谁写的屎山",
+  "temperature:0",
+  "又是token超了",
+  "这个bug不是我写的",
+  "能跑就行，别动了",
+  "context window爆了",
+  "prompt太长了",
+  "hallucination又来了",
+  "为什么又404了",
+  "API rate limit...",
+  "这个模型太贵了",
+  "fine-tune还是RAG?",
+  "embedding维度不对",
+  "向量数据库炸了",
+  "LangChain又更新了",
+  "这个agent又死循环了",
+  "function calling失败",
+  "streaming卡住了",
+  "部署又挂了"
+]
+export const PROGRAMMER_QUOTE_DURATION_SEC = 4.0
+
 // ── GitHub Heatmap ──────────────────────────────────────────
 export const HEATMAP_CELL_SIZE = 2
 export const HEATMAP_CELL_GAP = 1

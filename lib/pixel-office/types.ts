@@ -208,4 +208,6 @@ export interface Character {
   codeSnippets: Array<{ text: string; age: number; x: number; y: number }>
   photoComments: Array<{ text: string; age: number; x: number }>
   isViewingPhoto: boolean
+  programmerQuote: string | null
+  programmerQuoteTimer: number
 }

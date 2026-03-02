@@ -889,6 +889,65 @@ export interface SelectionRenderState {
   characters: Map<number, Character>
 }
 
+export function renderProgrammerQuotes(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  for (const ch of characters) {
+    if (!ch.programmerQuote) continue
+
+    const sittingOff = ch.state === CharacterState.TYPE ? BUBBLE_SITTING_OFFSET_PX : 0
+    const fontSize = Math.max(10, Math.round(5 * zoom))
+    const text = ch.programmerQuote
+    
+    // Calculate fade out when timer is low
+    let alpha = 1.0
+    if (ch.programmerQuoteTimer < 1.0) {
+      alpha = ch.programmerQuoteTimer
+    }
+
+    ctx.save()
+    ctx.font = `bold ${fontSize}px "Courier New", monospace`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    const tw = ctx.measureText(text).width
+    const paddingX = 6 * zoom
+    const paddingY = 4 * zoom
+    const x = Math.round(offsetX + ch.x * zoom)
+    const y = Math.round(offsetY + (ch.y + sittingOff - BUBBLE_VERTICAL_OFFSET_PX - 8 * zoom) * zoom)
+    const w = tw + paddingX * 2
+    const h = fontSize + paddingY * 2
+    const radius = 4 * zoom
+
+    // Draw background bubble
+    ctx.globalAlpha = alpha * 0.85
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'
+    ctx.beginPath()
+    ctx.moveTo(x - w/2 + radius, y - h/2)
+    ctx.lineTo(x + w/2 - radius, y - h/2)
+    ctx.quadraticCurveTo(x + w/2, y - h/2, x + w/2, y - h/2 + radius)
+    ctx.lineTo(x + w/2, y + h/2 - radius)
+    ctx.quadraticCurveTo(x + w/2, y + h/2, x + w/2 - radius, y + h/2)
+    ctx.lineTo(x - w/2 + radius, y + h/2)
+    ctx.quadraticCurveTo(x - w/2, y + h/2, x - w/2, y + h/2 - radius)
+    ctx.lineTo(x - w/2, y - h/2 + radius)
+    ctx.quadraticCurveTo(x - w/2, y - h/2, x - w/2 + radius, y - h/2)
+    ctx.closePath()
+    ctx.fill()
+
+    // Draw text
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(text, x, y)
+
+    ctx.restore()
+  }
+}
+
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   canvasWidth: number,
@@ -948,6 +1007,9 @@ export function renderFrame(
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom)
+
+  // Programmer quotes (developer humor when sitting)
+  renderProgrammerQuotes(ctx, characters, offsetX, offsetY, zoom)
 
   // Editor overlays
   if (editor) {

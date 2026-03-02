@@ -18,6 +18,8 @@ import {
   CAT_WANDER_PAUSE_MIN_SEC,
   CAT_WANDER_PAUSE_MAX_SEC,
   CAT_WALK_SPEED_FACTOR,
+  PROGRAMMER_QUOTES,
+  PROGRAMMER_QUOTE_DURATION_SEC,
 } from '../constants'
 import type { InteractionPoint } from '../layout/layoutSerializer'
 
@@ -140,6 +142,8 @@ export function createCharacter(
     codeSnippets: [],
     photoComments: [],
     isViewingPhoto: false,
+    programmerQuote: null,
+    programmerQuoteTimer: 0,
   }
 }
 
@@ -153,6 +157,15 @@ export function updateCharacter(
   interactionPoints: InteractionPoint[],
 ): void {
   ch.frameTimer += dt
+
+  // Update programmer quote timer
+  if (ch.programmerQuoteTimer > 0) {
+    ch.programmerQuoteTimer -= dt
+    if (ch.programmerQuoteTimer <= 0) {
+      ch.programmerQuote = null
+      ch.programmerQuoteTimer = 0
+    }
+  }
 
   // Pet-specific update: always wander, never sit
   if (ch.isCat || ch.isLobster) {
@@ -291,6 +304,8 @@ export function updateCharacter(
               // Snap to fractional seat position for visual alignment with chair sprite
               ch.x = seat.seatCol * TILE_SIZE + TILE_SIZE / 2
               ch.y = seat.seatRow * TILE_SIZE + TILE_SIZE / 2
+              // Show programmer quote when sitting
+              setProgrammerQuote(ch)
             } else {
               ch.state = CharacterState.IDLE
             }
@@ -331,6 +346,8 @@ export function updateCharacter(
               } else {
                 ch.seatTimer = randomRange(SEAT_REST_MIN_SEC, SEAT_REST_MAX_SEC)
               }
+              // Show programmer quote when resting at seat
+              setProgrammerQuote(ch)
               ch.wanderCount = 0
               ch.wanderLimit = randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX)
               ch.frame = 0
@@ -480,4 +497,11 @@ function randomRange(min: number, max: number): number {
 
 function randomInt(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1))
+}
+
+/** Set a random programmer quote when sitting down */
+function setProgrammerQuote(ch: Character): void {
+  const quote = PROGRAMMER_QUOTES[Math.floor(Math.random() * PROGRAMMER_QUOTES.length)]
+  ch.programmerQuote = quote
+  ch.programmerQuoteTimer = PROGRAMMER_QUOTE_DURATION_SEC
 }

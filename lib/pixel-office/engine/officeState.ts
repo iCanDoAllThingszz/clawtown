@@ -23,6 +23,7 @@ import {
   layoutToFurnitureInstances,
   layoutToSeats,
   getBlockedTiles,
+  getSeatTiles,
   getInteractionPoints,
   getDoorwayTiles,
 } from '../layout/layoutSerializer'
@@ -118,7 +119,7 @@ export class OfficeState {
     this.layout = layout || createDefaultLayout()
     this.tileMap = layoutToTileMap(this.layout)
     this.seats = layoutToSeats(this.layout.furniture)
-    this.blockedTiles = getBlockedTiles(this.layout.furniture)
+    this.blockedTiles = getBlockedTiles(this.layout.furniture, getSeatTiles(this.seats))
     this.furniture = layoutToFurnitureInstances(this.layout.furniture)
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles)
     this.interactionPoints = getInteractionPoints(this.layout.furniture, this.tileMap, this.blockedTiles)
@@ -137,7 +138,7 @@ export class OfficeState {
     this.layout = layout
     this.tileMap = layoutToTileMap(layout)
     this.seats = layoutToSeats(layout.furniture)
-    this.blockedTiles = getBlockedTiles(layout.furniture)
+    this.blockedTiles = getBlockedTiles(layout.furniture, getSeatTiles(this.seats))
     this.rebuildFurnitureInstances()
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles)
     this.interactionPoints = getInteractionPoints(layout.furniture, this.tileMap, this.blockedTiles)
